@@ -42,7 +42,7 @@ CSimpleHandleManager::Initialize(
 {
     PAL_ERROR palError = NO_ERROR;
 
-    InternalInitializeCriticalSection(&m_csLock);
+    //InternalInitializeCriticalSection(&m_csLock);
     m_fLockInitialized = TRUE;
 
     m_dwTableGrowthRate = c_BasicGrowthRate;
@@ -174,7 +174,7 @@ CSimpleHandleManager::GetObjectFromHandle(
     PAL_ERROR palError = NO_ERROR;
     HANDLE_INDEX hi;
 
-    Lock(pThread);
+    LockShared(pThread);
 
     if (!ValidateHandle(h))
     {
@@ -190,7 +190,7 @@ CSimpleHandleManager::GetObjectFromHandle(
 
 GetObjectFromHandleExit:
 
-    Unlock(pThread);
+    UnlockShared(pThread);
 
     return palError;
 }

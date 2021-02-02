@@ -169,7 +169,7 @@ QueryPerformanceCounter(
     ENTRY("QueryPerformanceCounter()\n");
 
 #if HAVE_CLOCK_GETTIME_NSEC_NP
-    lpPerformanceCount->QuadPart = (LONGLONG)clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    lpPerformanceCount->QuadPart = ((LONGLONG)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 100);
 #elif HAVE_CLOCK_MONOTONIC
     struct timespec ts;
     int result = clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -182,7 +182,7 @@ QueryPerformanceCounter(
     else
     {
         lpPerformanceCount->QuadPart =
-                ((LONGLONG)(ts.tv_sec) * (LONGLONG)(tccSecondsToNanoSeconds)) + (LONGLONG)(ts.tv_nsec);
+                (((LONGLONG)(ts.tv_sec) * (LONGLONG)(tccSecondsToNanoSeconds)) + (LONGLONG)(ts.tv_nsec)) / 100;
     }
 #else
     #error "The PAL requires either mach_absolute_time() or clock_gettime(CLOCK_MONOTONIC) to be supported."
@@ -204,7 +204,7 @@ QueryPerformanceFrequency(
     ENTRY("QueryPerformanceFrequency()\n");
 
 #if HAVE_CLOCK_GETTIME_NSEC_NP
-    lpFrequency->QuadPart = (LONGLONG)(tccSecondsToNanoSeconds);
+    lpFrequency->QuadPart = (LONGLONG)(tccSecondsToNanoSeconds / 100);
 #elif HAVE_CLOCK_MONOTONIC
     // clock_gettime() returns a result in terms of nanoseconds rather than a count. This
     // means that we need to either always scale the result by the actual resolution (to
@@ -212,7 +212,7 @@ QueryPerformanceFrequency(
     // the latter since it allows the highest throughput and should minimize error propagated
     // to the user.
 
-    lpFrequency->QuadPart = (LONGLONG)(tccSecondsToNanoSeconds);
+    lpFrequency->QuadPart = (LONGLONG)(tccSecondsToNanoSeconds / 100);
 #else
     #error "The PAL requires either mach_absolute_time() or clock_gettime(CLOCK_MONOTONIC) to be supported."
 #endif

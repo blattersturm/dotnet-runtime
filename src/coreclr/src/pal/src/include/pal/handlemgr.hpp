@@ -26,6 +26,8 @@ Abstract:
 #include "pal/thread.hpp"
 #include "pal/malloc.hpp"
 
+#include <shared_mutex>
+
 
 /* Pseudo handles constant for current thread and process */
 extern const HANDLE hPseudoCurrentProcess;
@@ -73,7 +75,7 @@ namespace CorUnix
         DWORD m_dwTableGrowthRate;
         HANDLE_TABLE_ENTRY* m_rghteHandleTable;
 
-        CRITICAL_SECTION m_csLock;
+        std::shared_mutex m_csLock;
         bool m_fLockInitialized;
 
         bool ValidateHandle(HANDLE h);
@@ -96,7 +98,7 @@ namespace CorUnix
         {
             if (m_fLockInitialized)
             {
-                DeleteCriticalSection(&m_csLock);
+                //DeleteCriticalSection(&m_csLock);
             }
 
             if (NULL != m_rghteHandleTable)
@@ -139,7 +141,8 @@ namespace CorUnix
             CPalThread *pThread
             )
         {
-            InternalEnterCriticalSection(pThread, &m_csLock);
+            //InternalEnterCriticalSection(pThread, &m_csLock);
+            m_csLock.lock();
         };
 
         void
@@ -147,7 +150,23 @@ namespace CorUnix
             CPalThread *pThread
             )
         {
-            InternalLeaveCriticalSection(pThread, &m_csLock);
+            m_csLock.unlock();
+        };
+        
+        void
+        LockShared(
+            CPalThread *pThread
+            )
+        {
+            m_csLock.lock_shared();
+        };
+
+        void
+        UnlockShared(
+            CPalThread *pThread
+            )
+        {
+            m_csLock.unlock_shared();
         };
     };
 

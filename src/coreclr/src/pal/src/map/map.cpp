@@ -56,10 +56,11 @@ SET_DEFAULT_DEBUG_CHANNEL(VIRTUAL);
 //
 
 CRITICAL_SECTION mapping_critsec;
+static CONST PCHAR MAP_TEMPLATE = "/.file_mapping_PALbacked.XXXXXXXXXX";
 LIST_ENTRY MappedViewList;
 
 #ifndef CORECLR
-static PAL_ERROR MAPCreateTempFile(CPalThread *, PINT, PSZ);
+static PAL_ERROR MAPCreateTempFile(CPalThread *, PINT, PSZ*);
 #endif // !CORECLR
 static PAL_ERROR MAPGrowLocalFile(INT, UINT);
 static PMAPPED_VIEW_LIST MAPGetViewForAddress( LPCVOID );
@@ -172,6 +173,10 @@ CFileMappingImmutableDataCopyRoutine(
     if (NULL != pImmutableData->lpFileName)
     {
         pImmutableDataTarget->lpFileName = strdup(pImmutableData->lpFileName);
+    }
+    else
+    {
+		pImmutableDataTarget->lpFileName = NULL;
     }
 }
 
@@ -396,12 +401,14 @@ CorUnix::InternalCreateFileMapping(
     // Validate parameters
     //
 
+#ifdef CORECLR
     if (lpName != nullptr)
     {
         ASSERT("lpName: Cross-process named objects are not supported in PAL");
         palError = ERROR_NOT_SUPPORTED;
         goto ExitInternalCreateFileMapping;
     }
+#endif
 
     if (0 != dwMaximumSizeHigh)
     {
@@ -452,6 +459,8 @@ CorUnix::InternalCreateFileMapping(
     {
         goto ExitInternalCreateFileMapping;
     }
+    
+    pImmutableData->lpFileName = NULL;
 
     if (hFile == INVALID_HANDLE_VALUE
 #ifndef CORECLR
@@ -593,7 +602,7 @@ CorUnix::InternalCreateFileMapping(
 
             /* Create a temporary file on the filesystem in order to be
                shared across processes. */
-            palError = MAPCreateTempFile(pThread, &UnixFd, pImmutableData->lpFileName);
+            palError = MAPCreateTempFile(pThread, &UnixFd, &pImmutableData->lpFileName);
             if (NO_ERROR != palError)
             {
                 ERROR("Unable to create the temporary file.\n");
@@ -736,12 +745,12 @@ ExitInternalCreateFileMapping:
 
     if (NULL != pMapping)
     {
-        pMapping->ReleaseReference(pThread);
-
-        if (bPALCreatedTempFile)
+        if (bPALCreatedTempFile && pImmutableData->lpFileName)
         {
             unlink(pImmutableData->lpFileName);
         }
+
+        pMapping->ReleaseReference(pThread);
 
         if (-1 != UnixFd)
         {
@@ -1787,6 +1796,69 @@ static BOOL MAPIsRequestPermissible( DWORD flProtect, CFileProcessLocalData * pF
         /* Action is permissible */
         return TRUE;
     }
+}
+
+/*++
+Function:
+
+    MAPCreateTempFile -
+
+        Creates the temp file for a NAMED mapping.
+
+        OUT lpUnixFd - A pointer to the unix file descriptor.
+
+        Returns a pointer to the filename on sucess, NULL otherwise.
+    NOTE:   This function's caller owns the critical section.
+            This function sets the last error code.
+--*/
+BOOL PALGetPalConfigDir(LPSTR dest, UINT nBufferLength);
+
+static PAL_ERROR MAPCreateTempFile(CPalThread* thread, PINT lpUnixFd, PSZ* strName)
+{
+    LPSTR lpFileName = NULL;
+
+    TRACE("MAPCreateTempFile( PINT lpUnixFd = %p )\n", lpUnixFd);
+    
+    if (strName)
+    {
+		*strName = NULL;
+    }
+
+    lpFileName = (LPSTR)malloc(MAX_PATH + 1);
+    if (!lpFileName)
+    {
+        ERROR("Unable to allocate memory.\n");
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        goto exit;
+    }
+
+    *lpFileName = '\0';
+    if (!PALGetPalConfigDir(lpFileName, MAX_PATH))
+    {
+        ASSERT("Unable to determine the PAL config directory.\n");
+        SetLastError(ERROR_INTERNAL_ERROR);
+        goto exit;
+    }
+
+    strcat(lpFileName, MAP_TEMPLATE);
+
+    /* Create a file to be used as the paging file. */
+    *lpUnixFd = mkstemp(lpFileName);
+    if (-1 == *lpUnixFd)
+    {
+        ASSERT("mkstemp() failed; errno is %d (%s)\n", errno, strerror(errno));
+        SetLastError(ERROR_INTERNAL_ERROR);
+        free(lpFileName);
+        lpFileName = NULL;
+    }
+
+exit:
+    TRACE("returning %s\n", lpFileName);
+    if (strName)
+    {
+        *strName = lpFileName;
+    }
+    return ERROR_SUCCESS;
 }
 
 // returns TRUE if we have information about the specified address

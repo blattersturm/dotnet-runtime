@@ -226,7 +226,6 @@ extern FILE *output_file;
 /* master switch for debug channel enablement, to be modified by debugger */
 extern Volatile<BOOL> dbg_master_switch ;
 
-
 /* conditionnal compilation for other debug messages */
 #if !_ENABLE_DEBUG_MESSAGES_
 

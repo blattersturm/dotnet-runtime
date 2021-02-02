@@ -899,7 +899,7 @@ CSharedMemoryObjectManager::ReferenceMultipleObjectsByHandleArray(
         rgpobjs
         );
 
-    m_HandleManager.Lock(pthr);
+    //m_HandleManager.LockShared(pthr);
 
     for (dw = 0; dw < dwHandleCount; dw += 1)
     {
@@ -940,7 +940,7 @@ CSharedMemoryObjectManager::ReferenceMultipleObjectsByHandleArray(
     // the handle manager lock)
     //
 
-    m_HandleManager.Unlock(pthr);
+    //m_HandleManager.Unlock(pthr);
 
     if (NO_ERROR != palError)
     {

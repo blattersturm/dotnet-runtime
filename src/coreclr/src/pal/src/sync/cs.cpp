@@ -157,13 +157,15 @@ typedef struct _PAL_CRITICAL_SECTION {
     Volatile<LONG> LockCount;
     LONG RecursionCount;
     SIZE_T OwningThread;
-    ULONG_PTR SpinCount;
-    // Private Unix part
+    struct CSUnixPart
+    {
 #ifdef PAL_TRACK_CRITICAL_SECTIONS_DATA
-    BOOL fInternal;
+		BOOL fInternal;
 #endif // PAL_TRACK_CRITICAL_SECTIONS_DATA
-    Volatile<PalCsInitState> cisInitState;
-    PAL_CRITICAL_SECTION_NATIVE_DATA csndNativeData;
+		Volatile<PalCsInitState> cisInitState;
+		PAL_CRITICAL_SECTION_NATIVE_DATA csndNativeData;
+	}* unix;
+    ULONG_PTR SpinCount;
 } PAL_CRITICAL_SECTION, *PPAL_CRITICAL_SECTION, *LPPAL_CRITICAL_SECTION;
 
 #ifdef _DEBUG
@@ -356,8 +358,8 @@ VOID InternalDeleteCriticalSection(
     PAL_CRITICAL_SECTION * pPalCriticalSection =
         reinterpret_cast<PAL_CRITICAL_SECTION*>(pCriticalSection);
 
-    _ASSERT_MSG(PalCsUserInitialized == pPalCriticalSection->cisInitState ||
-                PalCsFullyInitialized == pPalCriticalSection->cisInitState,
+    _ASSERT_MSG(PalCsUserInitialized == pPalCriticalSection->unix->cisInitState ||
+                PalCsFullyInitialized == pPalCriticalSection->unix->cisInitState,
                 "CS %p is not initialized", pPalCriticalSection);
 
 #ifdef _DEBUG
@@ -467,23 +469,25 @@ VOID InternalDeleteCriticalSection(
     }
 #endif // _DEBUG
 
-    if (PalCsFullyInitialized == pPalCriticalSection->cisInitState)
+    if (PalCsFullyInitialized == pPalCriticalSection->unix->cisInitState)
     {
         int iRet;
 
         // destroy condition
-        iRet = pthread_cond_destroy(&pPalCriticalSection->csndNativeData.condition);
+        iRet = pthread_cond_destroy(&pPalCriticalSection->unix->csndNativeData.condition);
         _ASSERT_MSG(0 == iRet, "Failed destroying condition in CS @ %p "
                     "[err=%d]\n", pPalCriticalSection, iRet);
 
         // destroy mutex
-        iRet = pthread_mutex_destroy(&pPalCriticalSection->csndNativeData.mutex);
+        iRet = pthread_mutex_destroy(&pPalCriticalSection->unix->csndNativeData.mutex);
         _ASSERT_MSG(0 == iRet, "Failed destroying mutex in CS @ %p "
                     "[err=%d]\n", pPalCriticalSection, iRet);
     }
 
     // Reset critical section state
-    pPalCriticalSection->cisInitState = PalCsNotInitialized;
+    pPalCriticalSection->unix->cisInitState = PalCsNotInitialized;
+    
+    delete pPalCriticalSection->unix;
 }
 
 // The following PALCEnterCriticalSection and PALCLeaveCriticalSection
@@ -623,7 +627,7 @@ namespace CorUnix
 #endif // _DEBUG
 
         // Init CS data
-        pPalCriticalSection->DebugInfo         = NULL;
+        pPalCriticalSection->DebugInfo         = (CRITICAL_SECTION_DEBUG_INFO*)0xFFFFFFFF;
         pPalCriticalSection->LockCount         = 0;
         pPalCriticalSection->RecursionCount    = 0;
         pPalCriticalSection->SpinCount         = dwSpinCount;
@@ -665,7 +669,8 @@ namespace CorUnix
 #endif // _DEBUG
 
         // Set initializazion state
-        pPalCriticalSection->cisInitState = PalCsUserInitialized;
+        pPalCriticalSection->unix = (_PAL_CRITICAL_SECTION::CSUnixPart*)malloc(sizeof(_PAL_CRITICAL_SECTION::CSUnixPart));
+        pPalCriticalSection->unix->cisInitState = PalCsUserInitialized;
 
 #ifdef MUTEX_BASED_CSS
         bool fInit;
@@ -1058,7 +1063,7 @@ namespace CorUnix
         LONG lVal, lNewVal;
         bool fRet = true;
 
-        lVal = pPalCriticalSection->cisInitState;
+        lVal = pPalCriticalSection->unix->cisInitState;
         if (PalCsFullyInitialized == lVal)
         {
             goto PCDI_exit;
@@ -1068,7 +1073,7 @@ namespace CorUnix
             int iRet;
             lNewVal = (LONG)PalCsFullyInitializing;
             lNewVal = InterlockedCompareExchange(
-                (LONG *)&pPalCriticalSection->cisInitState, lNewVal, lVal);
+                (LONG *)&pPalCriticalSection->unix->cisInitState, lNewVal, lVal);
             if (lNewVal != lVal)
             {
                 if (PalCsFullyInitialized == lNewVal)
@@ -1089,32 +1094,32 @@ namespace CorUnix
             // Actual native initialization
             //
             // Mutex
-            iRet = pthread_mutex_init(&pPalCriticalSection->csndNativeData.mutex, NULL);
+            iRet = pthread_mutex_init(&pPalCriticalSection->unix->csndNativeData.mutex, NULL);
             if (0 != iRet)
             {
                 ASSERT("Failed initializing mutex in CS @ %p [err=%d]\n",
                         pPalCriticalSection, iRet);
-                pPalCriticalSection->cisInitState = PalCsUserInitialized;
+                pPalCriticalSection->unix->cisInitState = PalCsUserInitialized;
                 fRet = false;
                 goto PCDI_exit;
             }
 #ifndef MUTEX_BASED_CSS
             // Condition
-            iRet = pthread_cond_init(&pPalCriticalSection->csndNativeData.condition, NULL);
+            iRet = pthread_cond_init(&pPalCriticalSection->unix->csndNativeData.condition, NULL);
             if (0 != iRet)
             {
                 ASSERT("Failed initializing condition in CS @ %p [err=%d]\n",
                        pPalCriticalSection, iRet);
-                pthread_mutex_destroy(&pPalCriticalSection->csndNativeData.mutex);
-                pPalCriticalSection->cisInitState = PalCsUserInitialized;
+                pthread_mutex_destroy(&pPalCriticalSection->unix->csndNativeData.mutex);
+                pPalCriticalSection->unix->cisInitState = PalCsUserInitialized;
                 fRet = false;
                 goto PCDI_exit;
             }
             // Predicate
-            pPalCriticalSection->csndNativeData.iPredicate = 0;
+            pPalCriticalSection->unix->csndNativeData.iPredicate = 0;
 #endif
 
-            pPalCriticalSection->cisInitState = PalCsFullyInitialized;
+            pPalCriticalSection->unix->cisInitState = PalCsFullyInitialized;
         }
         else if (PalCsFullyInitializing == lVal)
         {
@@ -1152,7 +1157,7 @@ namespace CorUnix
         DWORD lVal, lNewVal;
         PAL_ERROR palErr = NO_ERROR;
 
-        if (PalCsFullyInitialized != pPalCriticalSection->cisInitState)
+        if (PalCsFullyInitialized != pPalCriticalSection->unix->cisInitState)
         {
             // First contention, the CS native wait support need to be
             // initialized at this time
@@ -1235,7 +1240,7 @@ namespace CorUnix
         CS_TRACE("Trying to go to sleep [CS=%p]\n", pPalCriticalSection);
 
         // Lock the mutex
-        iRet = pthread_mutex_lock(&pPalCriticalSection->csndNativeData.mutex);
+        iRet = pthread_mutex_lock(&pPalCriticalSection->unix->csndNativeData.mutex);
         if (0 != iRet)
         {
             palErr = ERROR_INTERNAL_ERROR;
@@ -1244,30 +1249,30 @@ namespace CorUnix
 
         CS_TRACE("Actually Going to sleep [CS=%p]\n", pPalCriticalSection);
 
-        while (0 == pPalCriticalSection->csndNativeData.iPredicate)
+        while (0 == pPalCriticalSection->unix->csndNativeData.iPredicate)
         {
             // Wait on the condition
-            iRet = pthread_cond_wait(&pPalCriticalSection->csndNativeData.condition,
-                                     &pPalCriticalSection->csndNativeData.mutex);
+            iRet = pthread_cond_wait(&pPalCriticalSection->unix->csndNativeData.condition,
+                                     &pPalCriticalSection->unix->csndNativeData.mutex);
 
             CS_TRACE("Got a signal on condition [pred=%d]!\n",
-                           pPalCriticalSection->csndNativeData.iPredicate);
+                           pPalCriticalSection->unix->csndNativeData.iPredicate);
             if (0 != iRet)
             {
                 // Failed: unlock the mutex and bail out
                 ASSERT("Failed waiting on condition in CS %p [err=%d]\n",
                        pPalCriticalSection, iRet);
-                pthread_mutex_unlock(&pPalCriticalSection->csndNativeData.mutex);
+                pthread_mutex_unlock(&pPalCriticalSection->unix->csndNativeData.mutex);
                 palErr = ERROR_INTERNAL_ERROR;
                 goto PCDAW_exit;
             }
         }
 
         // Reset the predicate
-        pPalCriticalSection->csndNativeData.iPredicate = 0;
+        pPalCriticalSection->unix->csndNativeData.iPredicate = 0;
 
         // Unlock the mutex
-        iRet = pthread_mutex_unlock(&pPalCriticalSection->csndNativeData.mutex);
+        iRet = pthread_mutex_unlock(&pPalCriticalSection->unix->csndNativeData.mutex);
         if (0 != iRet)
         {
             palErr = ERROR_INTERNAL_ERROR;
@@ -1296,7 +1301,7 @@ namespace CorUnix
                     "Trying to wake up a waiter on CS not fully initialized\n");
 
         // Lock the mutex
-        iRet = pthread_mutex_lock(&pPalCriticalSection->csndNativeData.mutex);
+        iRet = pthread_mutex_lock(&pPalCriticalSection->unix->csndNativeData.mutex);
         if (0 != iRet)
         {
             palErr = ERROR_INTERNAL_ERROR;
@@ -1304,13 +1309,13 @@ namespace CorUnix
         }
 
         // Set the predicate
-        pPalCriticalSection->csndNativeData.iPredicate = 1;
+        pPalCriticalSection->unix->csndNativeData.iPredicate = 1;
 
         CS_TRACE("Signaling condition/predicate [pred=%d]!\n",
-                 pPalCriticalSection->csndNativeData.iPredicate);
+                 pPalCriticalSection->unix->csndNativeData.iPredicate);
 
         // Signal the condition
-        iRet = pthread_cond_signal(&pPalCriticalSection->csndNativeData.condition);
+        iRet = pthread_cond_signal(&pPalCriticalSection->unix->csndNativeData.condition);
         if (0 != iRet)
         {
             // Failed: set palErr, but continue in order to unlock
@@ -1321,7 +1326,7 @@ namespace CorUnix
         }
 
         // Unlock the mutex
-        iRet = pthread_mutex_unlock(&pPalCriticalSection->csndNativeData.mutex);
+        iRet = pthread_mutex_unlock(&pPalCriticalSection->unix->csndNativeData.mutex);
         if (0 != iRet)
         {
             palErr = ERROR_INTERNAL_ERROR;

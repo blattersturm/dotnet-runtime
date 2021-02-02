@@ -368,9 +368,11 @@ PAL_Initialize(
     char * const argv[]);
 
 PALIMPORT
-void
+int
 PALAPI
 PAL_InitializeWithFlags(
+    int argc,
+    const char *const argv[],
     DWORD flags);
 
 PALIMPORT
@@ -2341,18 +2343,22 @@ typedef struct _CRITICAL_SECTION {
     LONG LockCount;
     LONG RecursionCount;
     HANDLE OwningThread;
+
+	struct CSUnixPart
+	{
+	#ifdef PAL_TRACK_CRITICAL_SECTIONS_DATA
+		BOOL bInternal;
+	#endif // PAL_TRACK_CRITICAL_SECTIONS_DATA
+		volatile DWORD dwInitState;
+
+		union CSNativeDataStorage
+		{
+			BYTE rgNativeDataStorage[PAL_CS_NATIVE_DATA_SIZE];
+			PVOID pvAlign; // make sure the storage is machine-pointer-size aligned
+		} csnds;
+    }* unix;
+
     ULONG_PTR SpinCount;
-
-#ifdef PAL_TRACK_CRITICAL_SECTIONS_DATA
-    BOOL bInternal;
-#endif // PAL_TRACK_CRITICAL_SECTIONS_DATA
-    volatile DWORD dwInitState;
-
-    union CSNativeDataStorage
-    {
-        BYTE rgNativeDataStorage[PAL_CS_NATIVE_DATA_SIZE];
-        PVOID pvAlign; // make sure the storage is machine-pointer-size aligned
-    } csnds;
 } CRITICAL_SECTION, *PCRITICAL_SECTION, *LPCRITICAL_SECTION;
 
 PALIMPORT VOID PALAPI EnterCriticalSection(IN OUT LPCRITICAL_SECTION lpCriticalSection);

@@ -149,7 +149,7 @@ function_name() to call the system's implementation
 #ifdef DEBUG
 #define _ENABLE_DEBUG_MESSAGES_ 1
 #else
-#define _ENABLE_DEBUG_MESSAGES_ 0
+#define _ENABLE_DEBUG_MESSAGES_ 1
 #endif
 
 /* Include type_traits before including the pal.h. On newer glibcxx versions,

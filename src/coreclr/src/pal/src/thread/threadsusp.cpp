@@ -44,7 +44,7 @@ SET_DEFAULT_DEBUG_CHANNEL(THREAD);
    in suspended state in order to resume it. */
 CONST BYTE WAKEUPCODE=0x2A;
 
-// #define USE_GLOBAL_LOCK_FOR_SUSPENSION // Uncomment this define to use the global suspension lock.
+#define USE_GLOBAL_LOCK_FOR_SUSPENSION // Uncomment this define to use the global suspension lock.
 /* The global suspension lock can be used in place of each thread having its own
 suspension mutex or spinlock. The downside is that it restricts us to only
 performing one suspension or resumption in the PAL at a time. */

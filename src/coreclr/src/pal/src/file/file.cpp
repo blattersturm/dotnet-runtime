@@ -2128,12 +2128,12 @@ CorUnix::InternalReadFile(
         palError = ERROR_INVALID_HANDLE;
         goto done;
     }
-    else if (NULL != lpOverlapped)
+    /*else if (NULL != lpOverlapped)
     {
         ASSERT( "lpOverlapped is not NULL, as it should be.\n" );
         palError = ERROR_INVALID_PARAMETER;
         goto done;
-    }
+    }*/
     else if (NULL == lpBuffer)
     {
         ERROR( "Invalid parameter. (lpBuffer:%p)\n", lpBuffer);
@@ -2185,7 +2185,14 @@ CorUnix::InternalReadFile(
 
 Read:
     TRACE("Reading from file descriptor %d\n", ifd);
-    res = read(ifd, lpBuffer, nNumberOfBytesToRead);
+    if (lpOverlapped && lpOverlapped->hEvent == NULL)
+    {
+        res = pread(ifd, lpBuffer, nNumberOfBytesToRead, lpOverlapped->Offset);
+    }
+    else
+    {
+        res = read(ifd, lpBuffer, nNumberOfBytesToRead);
+    }
     TRACE("read() returns %d\n", res);
 
     if (res >= 0)

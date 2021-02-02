@@ -18,6 +18,86 @@ Abstract:
 
 --*/
 
+struct ExceptionRecords
+{
+    CONTEXT ContextRecord;
+    EXCEPTION_RECORD ExceptionRecord;
+};
+
+// Max number of fallback contexts that are used when malloc fails to allocate ExceptionRecords structure
+static const int MaxFallbackContexts = sizeof(size_t) * 8;
+// Array of fallback contexts
+static ExceptionRecords s_fallbackContexts[MaxFallbackContexts];
+// Bitmap used for allocating fallback contexts - bits set to 1 represent already allocated context.
+static volatile size_t s_allocatedContextsBitmap = 0;
+
+/*++
+Function:
+    AllocateExceptionRecords
+
+    Allocate EXCEPTION_RECORD and CONTEXT structures for an exception.
+Parameters:
+    exceptionRecord - output pointer to the allocated exception record
+    contextRecord - output pointer to the allocated context record
+--*/
+VOID
+AllocateExceptionRecords(EXCEPTION_RECORD** exceptionRecord, CONTEXT** contextRecord)
+{
+    ExceptionRecords* records;
+    if (posix_memalign((void**)&records, alignof(ExceptionRecords), sizeof(ExceptionRecords)) != 0)
+    {
+        size_t bitmap;
+        size_t newBitmap;
+        int index;
+
+        do
+        {
+            bitmap = s_allocatedContextsBitmap;
+            index = __builtin_ffsl(~bitmap) - 1;
+            if (index < 0)
+            {
+                PROCAbort();
+            }
+
+            newBitmap = bitmap | ((size_t)1 << index);
+        }
+        while (__sync_val_compare_and_swap(&s_allocatedContextsBitmap, bitmap, newBitmap) != bitmap);
+
+        records = &s_fallbackContexts[index];
+    }
+
+    *contextRecord = &records->ContextRecord;
+    *exceptionRecord = &records->ExceptionRecord;
+}
+
+/*++
+Function:
+    PAL_FreeExceptionRecords
+
+    Free EXCEPTION_RECORD and CONTEXT structures of an exception that were allocated by the
+    AllocateExceptionRecords.
+Parameters:
+    exceptionRecord - exception record
+    contextRecord - context record
+--*/
+VOID
+PALAPI
+PAL_FreeExceptionRecords(IN EXCEPTION_RECORD *exceptionRecord, IN CONTEXT *contextRecord)
+{
+    // Both records are allocated at once and the allocated memory starts at the contextRecord
+    ExceptionRecords* records = (ExceptionRecords*)contextRecord;
+    if ((records >= &s_fallbackContexts[0]) && (records < &s_fallbackContexts[MaxFallbackContexts]))
+    {
+        int index = records - &s_fallbackContexts[0];
+        __sync_fetch_and_and(&s_allocatedContextsBitmap, ~((size_t)1 << index));
+    }
+    else
+    {
+        free(contextRecord);
+    }
+}
+
+#if 0
 #ifdef HOST_UNIX
 #include "pal/context.h"
 #include "pal.h"
@@ -614,3 +694,4 @@ RaiseException(IN DWORD dwExceptionCode,
 }
 
 #endif // !HOST_WINDOWS
+#endif

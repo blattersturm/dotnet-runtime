@@ -119,6 +119,8 @@ static PCRITICAL_SECTION init_critsec = NULL;
 
 static DWORD g_initializeDLLFlags = PAL_INITIALIZE_DLL;
 
+static char PALConfigDirName[MAX_PATH];
+
 static int Initialize(int argc, const char *const argv[], DWORD flags);
 static BOOL INIT_IncreaseDescriptorLimit(void);
 static LPWSTR INIT_FormatCommandLine (int argc, const char * const *argv);
@@ -1034,6 +1036,29 @@ void PALSetShutdownIntent()
 {
     /* TODO: See comment in PALIsShuttingDown */
     shutdown_intent = TRUE;
+}
+
+/*++
+Function:
+  PALGetPalConfigDir
+Retrieves the path of directory in which per-user PAL data is placed
+(file mapping page files, etc)
+Parameters :
+    LPSTR dest : buffer in which path is stored (must be at least MAX_PATH)
+Returns TRUE on success, FALSE otherwise.
+Note :
+    This function must be functional even if the PAL isn't initialized.
+--*/
+BOOL PALGetPalConfigDir( LPSTR dest, UINT nBufferLength )
+{
+	strcpy(PALConfigDirName, "/data/local/tmp");
+    if (strlen(PALConfigDirName) >= nBufferLength) 
+    {
+        ASSERT( "The buffer was invalid, or too small!\n" );
+        return FALSE;
+    }
+    strcpy(dest, PALConfigDirName);
+    return TRUE;
 }
 
 /*++

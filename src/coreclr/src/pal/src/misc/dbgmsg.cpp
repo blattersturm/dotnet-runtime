@@ -131,7 +131,8 @@ static const char INDENT_CHAR = '.';
 static BOOL DBG_get_indent(DBG_LEVEL_ID level, const char *format,
                            char *indent_string);
 
-static CRITICAL_SECTION fprintf_crit_section;
+//static CRITICAL_SECTION fprintf_crit_section;
+static pthread_mutex_t fprintf_crit_section = PTHREAD_MUTEX_INITIALIZER;
 
 /* Function definitions */
 
@@ -366,7 +367,7 @@ BOOL DBG_init_channels(void)
         }
     }
 
-    InternalInitializeCriticalSection(&fprintf_crit_section);
+    //InternalInitializeCriticalSection(&fprintf_crit_section);
 
     return TRUE;
 }
@@ -392,7 +393,7 @@ void DBG_close_channels()
 
     output_file = NULL;
 
-    DeleteCriticalSection(&fprintf_crit_section);
+    //DeleteCriticalSection(&fprintf_crit_section);
 
     /* if necessary, release TLS key for entry nesting level */
     if(0 != max_entry_level)
@@ -544,9 +545,10 @@ int DBG_printf(DBG_CHANNEL_ID channel, DBG_LEVEL_ID level, BOOL bHeader,
        avoid holding a libc lock while another thread is calling
        SuspendThread on this one. */
 
-    InternalEnterCriticalSection(NULL, &fprintf_crit_section);
+    //InternalEnterCriticalSection(NULL, &fprintf_crit_section);
+    pthread_mutex_lock(&fprintf_crit_section);
     fprintf( output_file, "%s%s", indent, buffer );
-    InternalLeaveCriticalSection(NULL, &fprintf_crit_section);
+    //InternalLeaveCriticalSection(NULL, &fprintf_crit_section);
 
     /* flush the output to file */
     if ( fflush(output_file) != 0 )
@@ -554,6 +556,7 @@ int DBG_printf(DBG_CHANNEL_ID channel, DBG_LEVEL_ID level, BOOL bHeader,
         fprintf(stderr, "ERROR : fflush() failed errno:%d (%s)\n",
                 errno, strerror(errno));
     }
+    pthread_mutex_unlock(&fprintf_crit_section);
 
     // Some systems support displaying a GUI dialog. We attempt this only for asserts.
     if ( level == DLI_ASSERT )

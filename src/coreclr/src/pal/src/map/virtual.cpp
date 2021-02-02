@@ -964,6 +964,8 @@ static LPVOID VIRTUALReserveMemory(
  *  and ExecutableMemoryAllocator to reserve virtual memory from the OS.
  *
  */
+static SIZE_T OurBoundary = 0x400000000;
+
 static LPVOID ReserveVirtualMemory(
                 IN CPalThread *pthrCurrent, /* Currently executing thread */
                 IN LPVOID lpAddress,        /* Region to reserve or commit */
@@ -999,12 +1001,16 @@ static LPVOID ReserveVirtualMemory(
     }
 #endif
 
-    LPVOID pRetVal = mmap((LPVOID) StartBoundary,
+    LPVOID pRetVal = mmap((LPVOID) (StartBoundary ? StartBoundary : OurBoundary),
                           MemSize,
                           PROT_NONE,
                           mmapFlags,
                           -1 /* fd */,
                           0  /* offset */);
+                          
+    if (!StartBoundary) {
+		OurBoundary += ALIGN_UP(dwSize, 65536);
+    }
 
     if (pRetVal == MAP_FAILED)
     {
